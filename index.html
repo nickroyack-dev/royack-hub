@@ -30,11 +30,19 @@
 <body>
   <div class="wrap">
     <iframe id="hub" title="Royack Hub"
-      src="https://script.google.com/macros/s/AKfycbzGTMNUjwg4AY89lfgOy4e8Ij-uge2qp2YE3BE6FUWKibgBXzRqT3H9ZD1-_yPkLw_u/exec"
+      data-src="https://script.google.com/macros/s/AKfycbzGTMNUjwg4AY89lfgOy4e8Ij-uge2qp2YE3BE6FUWKibgBXzRqT3H9ZD1-_yPkLw_u/exec"
       allow="clipboard-read; clipboard-write; camera; microphone; fullscreen; screen-wake-lock"
       allowfullscreen referrerpolicy="no-referrer-when-downgrade"
       onload="window.HUB_LOADED = true; var f = document.getElementById('fallback'); if (f) f.hidden = true;"></iframe>
   </div>
+  <script>
+    // v103: pass ?go=… (e.g. ?go=logfood from the phone widget) through to the Hub inside the iframe.
+    (function () {
+      var f = document.getElementById('hub'), u = f.getAttribute('data-src');
+      var go = (new URLSearchParams(location.search).get('go') || '').replace(/[^a-z-]/gi, '').slice(0, 20);
+      f.src = u + (go ? '?go=' + encodeURIComponent(go) : '');
+    })();
+  </script>
   <div id="fallback" hidden>
     Hub is taking a while to load.<br>
     <a id="direct" href="https://script.google.com/macros/s/AKfycbzGTMNUjwg4AY89lfgOy4e8Ij-uge2qp2YE3BE6FUWKibgBXzRqT3H9ZD1-_yPkLw_u/exec" target="_top" rel="noopener">Open Hub directly</a>
