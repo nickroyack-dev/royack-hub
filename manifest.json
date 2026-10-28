@@ -9,5 +9,9 @@
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Log food", "short_name": "Log food", "description": "Open the Hub at Log food", "url": "./?go=logfood",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }] }
   ]
 }
