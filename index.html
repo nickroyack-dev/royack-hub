@@ -53,5 +53,30 @@
       setTimeout(function () { if (!window.HUB_LOADED) document.getElementById('fallback').hidden = false; }, 15000);
     })();
   </script>
+  <script>
+    // v118 voice bridge: Google's Apps Script sandbox iframe can't use the microphone, so the Hub asks this top page
+    // to listen (Web Speech API) and gets the text back by postMessage. Only answers the Hub's own googleusercontent frame.
+    (function () {
+      var OK = /^https:\/\/[a-z0-9-]+-script\.googleusercontent\.com$/;
+      var SR = window.SpeechRecognition || window.webkitSpeechRecognition, rec = null, peer = null, peerOrigin = '';
+      function send(m) { if (peer) try { peer.postMessage(m, peerOrigin); } catch (e) {} }
+      function stop() { if (rec) { try { rec.stop(); } catch (e) {} } }
+      window.addEventListener('message', function (ev) {
+        if (!OK.test(ev.origin) || !ev.data || typeof ev.data !== 'object' || !ev.source) return;
+        var d = ev.data; peer = ev.source; peerOrigin = ev.origin;
+        if (d.type === 'hub-mic-ping') { send({ type: 'hub-mic-pong', ok: !!SR }); return; }
+        if (d.type === 'hub-mic-stop') { stop(); return; }
+        if (d.type !== 'hub-mic-start') return;
+        if (!SR) { send({ type: 'hub-mic-error', error: 'unsupported' }); return; }
+        stop();
+        var r = new SR(); rec = r;
+        r.lang = 'en-US'; r.interimResults = true; r.continuous = true; r.maxAlternatives = 1;
+        r.onresult = function (e) { var t = ''; for (var i = 0; i < e.results.length; i++) t += e.results[i][0].transcript; send({ type: 'hub-mic-text', text: t.slice(0, 600) }); };
+        r.onerror = function (e) { send({ type: 'hub-mic-error', error: (e && e.error) || 'error' }); };
+        r.onend = function () { if (rec === r) rec = null; send({ type: 'hub-mic-state', on: false }); };
+        try { r.start(); send({ type: 'hub-mic-state', on: true }); } catch (e) { send({ type: 'hub-mic-error', error: 'not-allowed' }); }
+      });
+    })();
+  </script>
 </body>
 </html>
