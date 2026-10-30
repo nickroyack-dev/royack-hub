@@ -59,6 +59,19 @@
     (function () {
       var OK = /^https:\/\/[a-z0-9-]+-script\.googleusercontent\.com$/;
       var SR = window.SpeechRecognition || window.webkitSpeechRecognition, rec = null, peer = null, peerOrigin = '';
+      function srJoin(res) {
+        // Android Chrome repeats the whole phrase in each result ("6", "6 oz", "6 oz of"…), finals included.
+        // Rebuild from scratch every event: a piece that extends the previous one replaces it; a repeat/prefix is dropped.
+        var out = [], fin = false;
+        for (var i = 0; i < res.length; i++) {
+          var t = String(res[i][0] && res[i][0].transcript || '').replace(/\s+/g, ' ').trim(), last = out[out.length - 1];
+          fin = !!res[i].isFinal; if (!t) continue;
+          if (last != null && t.toLowerCase().indexOf(last.toLowerCase()) === 0) out[out.length - 1] = t;
+          else if (last != null && last.toLowerCase().indexOf(t.toLowerCase()) === 0) continue;
+          else out.push(t);
+        }
+        return { text: out.join(' '), final: fin };
+      }
       function send(m) { if (peer) try { peer.postMessage(m, peerOrigin); } catch (e) {} }
       function stop() { if (rec) { try { rec.stop(); } catch (e) {} } }
       window.addEventListener('message', function (ev) {
@@ -71,7 +84,7 @@
         stop();
         var r = new SR(); rec = r;
         r.lang = 'en-US'; r.interimResults = true; r.continuous = true; r.maxAlternatives = 1;
-        r.onresult = function (e) { var t = ''; for (var i = 0; i < e.results.length; i++) t += e.results[i][0].transcript; send({ type: 'hub-mic-text', text: t.slice(0, 600) }); };
+        r.onresult = function (e) { var j = srJoin(e.results); send({ type: 'hub-mic-text', text: j.text.slice(0, 600), final: j.final }); }; // full transcript, Hub replaces
         r.onerror = function (e) { send({ type: 'hub-mic-error', error: (e && e.error) || 'error' }); };
         r.onend = function () { if (rec === r) rec = null; send({ type: 'hub-mic-state', on: false }); };
         try { r.start(); send({ type: 'hub-mic-state', on: true }); } catch (e) { send({ type: 'hub-mic-error', error: 'not-allowed' }); }
