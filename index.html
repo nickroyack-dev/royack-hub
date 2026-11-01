@@ -43,6 +43,7 @@
       var go = (q.get('go') || '').replace(/[^a-z-]/gi, '').slice(0, 20);
       var mic = /^(1|true|on|yes)$/i.test(q.get('mic') || ''); // v128: widget number → open Log food with the mic on
       f.src = u + (go ? '?go=' + encodeURIComponent(go) + (mic ? '&mic=1' : '') : '');
+      if (go && mic) f.src += '#' + go + '-mic'; // v129: hash copy of the flag (goMic also reads #logfood-mic)
     })();
   </script>
   <div id="fallback" hidden>
@@ -79,7 +80,9 @@
       window.addEventListener('message', function (ev) {
         if (!OK.test(ev.origin) || !ev.data || typeof ev.data !== 'object' || !ev.source) return;
         var d = ev.data; peer = ev.source; peerOrigin = ev.origin;
-        if (d.type === 'hub-mic-ping') { send({ type: 'hub-mic-pong', ok: !!SR }); return; }
+        if (d.type === 'hub-mic-ping') { // v129: also hand over ?go=…&mic=1 in case the flag is lost inside the Apps Script frames
+          var q = new URLSearchParams(location.search);
+          send({ type: 'hub-mic-pong', ok: !!SR, go: (q.get('go') || '').replace(/[^a-z-]/gi, '').slice(0, 20), mic: /^(1|true|on|yes)$/i.test(q.get('mic') || '') }); return; }
         if (d.type === 'hub-mic-stop') { stop(); return; }
         if (d.type !== 'hub-mic-start') return;
         if (!SR) { send({ type: 'hub-mic-error', error: 'unsupported' }); return; }
