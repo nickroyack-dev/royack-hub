@@ -36,11 +36,13 @@
       onload="window.HUB_LOADED = true; var f = document.getElementById('fallback'); if (f) f.hidden = true;"></iframe>
   </div>
   <script>
-    // v103: pass ?go=… (e.g. ?go=logfood from the phone widget) through to the Hub inside the iframe.
+    // v103/v128: pass ?go=… and &mic=1 (e.g. ?go=logfood from the phone widget) through to the Hub inside the iframe.
     (function () {
       var f = document.getElementById('hub'), u = f.getAttribute('data-src');
-      var go = (new URLSearchParams(location.search).get('go') || '').replace(/[^a-z-]/gi, '').slice(0, 20);
-      f.src = u + (go ? '?go=' + encodeURIComponent(go) : '');
+      var q = new URLSearchParams(location.search);
+      var go = (q.get('go') || '').replace(/[^a-z-]/gi, '').slice(0, 20);
+      var mic = /^(1|true|on|yes)$/i.test(q.get('mic') || ''); // v128: widget number → open Log food with the mic on
+      f.src = u + (go ? '?go=' + encodeURIComponent(go) + (mic ? '&mic=1' : '') : '');
     })();
   </script>
   <div id="fallback" hidden>
