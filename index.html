@@ -25,6 +25,13 @@
       text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,.5); max-width: 86vw; }
     #fallback a { color: #60a5fa; font-weight: 700; text-decoration: none; }
     #fallback[hidden] { display: none; }
+    .scan-live{position:fixed;inset:0;z-index:500;background:#020617}
+    .scan-live-vid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+    .scan-live-frame{position:absolute;left:50%;top:36%;width:min(78vw,340px);height:130px;transform:translate(-50%,-50%);border:2px solid #4ade80;border-radius:12px;box-shadow:0 0 0 9999px rgba(2,6,23,.6);pointer-events:none}
+    .scan-live-msg{position:absolute;left:0;right:0;top:calc(36% + 92px);text-align:center;color:#e2e8f0;font-size:14px;text-shadow:0 1px 4px #000;pointer-events:none}
+    .scan-live-bar{position:absolute;left:0;right:0;bottom:0;padding:14px 14px calc(16px + env(safe-area-inset-bottom));display:flex;gap:8px;background:linear-gradient(transparent,rgba(2,6,23,.92) 40%)}
+    .scan-live-bar button{flex:1;padding:12px 8px;font-size:15px;font-weight:600;color:#e2e8f0;background:#1e293b;border:1px solid #334155;border-radius:12px}
+    .scan-live-bar button:active{background:#334155}
   </style>
 </head>
 <body>
@@ -95,6 +102,87 @@
         try { r.start(); send({ type: 'hub-mic-state', on: true }); } catch (e) { send({ type: 'hub-mic-error', error: 'not-allowed' }); }
       });
     })();
+  </script>
+  <script>
+    // == v185 camera bridge ==
+    // The Hub's Apps Script sandbox iframe can't use the camera (same reason
+    // the mic needed the v118 bridge), so this top page runs the live barcode
+    // scanner and posts the code back to the Hub. Only answers the Hub's own
+    // googleusercontent frame.
+    (function () {
+      var OK = /^https:\/\/[a-z0-9-]+-script\.googleusercontent\.com$/;
+      var FORMATS = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39"];
+      var S = null; // {stream, det, video, msg, ov, timer, done}
+      var peer = null, peerOrigin = "";
+      function send(m) { if (peer) try { peer.postMessage(m, peerOrigin); } catch (e) {} }
+      function teardown() {
+        var s = S; S = null;
+        if (!s) return;
+        s.done = true;
+        if (s.timer) clearTimeout(s.timer);
+        try { if (s.stream) s.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+        try { if (s.ov && s.ov.remove) s.ov.remove(); } catch (e2) {}
+      }
+      function fail(error) { teardown(); send({ type: "hub-scan-error", error: error }); }
+      function tick() {
+        if (!S || S.done) return;
+        var v = S.video;
+        if (v && v.readyState >= 2 && v.videoWidth > 0) {
+          if (S.msg) S.msg.textContent = "Point at a barcode";
+          var p = null;
+          try { p = S.det.detect(v); } catch (e) {}
+          if (p && p.then) {
+            p.then(function (codes) {
+              if (!S || S.done) return;
+              var val = codes && codes.length ? String(codes[0].rawValue || "") : "";
+              if (val) {
+                teardown();
+                try { if (navigator.vibrate) navigator.vibrate(25); } catch (e) {}
+                send({ type: "hub-scan-code", code: val });
+              } else if (S && !S.done) { S.timer = setTimeout(tick, 220); }
+            }).catch(function () { if (S && !S.done) S.timer = setTimeout(tick, 220); });
+            return;
+          }
+        }
+        if (S) S.timer = setTimeout(tick, 220);
+      }
+      function start() {
+        if (S) return; // already scanning
+        var det = null;
+        try {
+          if ("BarcodeDetector" in window) det = new BarcodeDetector({ formats: FORMATS });
+        } catch (e) { det = null; }
+        if (!det || !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) { fail("unsupported"); return; }
+        var ov = document.createElement("div");
+        ov.className = "scan-live"; ov.id = "scanLiveOv";
+        ov.innerHTML = '<video class="scan-live-vid" playsinline muted autoplay></video>' +
+          '<div class="scan-live-frame" aria-hidden="true"></div>' +
+          '<div class="scan-live-msg">Starting camera…</div>' +
+          '<div class="scan-live-bar"><button type="button" class="scan-live-cancel">Cancel</button>' +
+          '<button type="button" class="scan-live-photo">Take a photo instead</button></div>';
+        document.body.appendChild(ov);
+        var video = ov.querySelector("video"), msg = ov.querySelector(".scan-live-msg");
+        S = { det: det, ov: ov, video: video, msg: msg, stream: null, timer: 0, done: false };
+        var cancel = ov.querySelector(".scan-live-cancel");
+        if (cancel) cancel.addEventListener("click", function () { teardown(); send({ type: "hub-scan-cancel" }); });
+        var photo = ov.querySelector(".scan-live-photo");
+        if (photo) photo.addEventListener("click", function () { teardown(); send({ type: "hub-scan-photo" }); });
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false }).then(function (stream) {
+          if (!S || S.done) { try { stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} return; }
+          S.stream = stream;
+          try { video.srcObject = stream; var pr = video.play(); if (pr && pr.catch) pr.catch(function () {}); } catch (e) {}
+          S.timer = setTimeout(tick, 220);
+        }).catch(function () { fail("not-allowed"); });
+      }
+      window.addEventListener("message", function (ev) {
+        if (!OK.test(ev.origin) || !ev.data || typeof ev.data !== "object" || !ev.source) return;
+        peer = ev.source; peerOrigin = ev.origin;
+        var d = ev.data;
+        if (d.type === "hub-scan-start") { send({ type: "hub-scan-opened" }); start(); return; }
+        if (d.type === "hub-scan-stop") { teardown(); return; }
+      });
+    })();
+    // == /v185 ==
   </script>
 </body>
 </html>
