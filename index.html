@@ -184,5 +184,35 @@
     })();
     // == /v185 ==
   </script>
+  <script>
+    // v190 nav history: the Apps Script sandbox history doesn't drive Android back,
+    // so the Hub posts hub-nav on every page change and this top page owns real
+    // history entries. Back/forward pops tell the Hub to restore the page.
+    (function () {
+      var OK = /^https:\/\/[a-z0-9-]+-script\.googleusercontent\.com$/;
+      var peer = null, peerOrigin = '', last = null, ready = false;
+      function send(m) { if (peer) try { peer.postMessage(m, peerOrigin); } catch (e) {} }
+      window.addEventListener('message', function (ev) {
+        if (!OK.test(ev.origin) || !ev.data || typeof ev.data !== 'object' || !ev.source) return;
+        var d = ev.data; peer = ev.source; peerOrigin = ev.origin;
+        if (d.type === 'hub-nav-init') {
+          last = d.page || 'home';
+          try { history.replaceState({ page: last }, '', '#' + last); } catch (e) {}
+          ready = true; return;
+        }
+        if (d.type !== 'hub-nav') return;
+        var pg = d.page || 'home';
+        if (pg === last) return;
+        last = pg;
+        if (!ready) { try { history.replaceState({ page: pg }, '', '#' + pg); } catch (e) {} ready = true; return; }
+        try { history.pushState({ page: pg }, '', '#' + pg); } catch (e) {}
+      });
+      window.addEventListener('popstate', function (ev) {
+        var pg = (ev.state && ev.state.page) || 'home';
+        last = pg;
+        send({ type: 'hub-nav-back', page: pg });
+      });
+    })();
+  </script>
 </body>
 </html>
